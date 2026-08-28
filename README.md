@@ -44,6 +44,18 @@ Hard-coding it would be making that decision in Solidity.
    delivered", so `slash()` reverts rather than being stubbed to succeed. Same gap as every other
    community data service.
 
+## Using it
+
+[`docs/integrator-runbook.md`](docs/integrator-runbook.md) is the end-to-end flow for the two
+parties: governance enables a chain and sets the cut, the integrator provisions and registers, the
+chain and integrator sign a Recurring Collection Agreement with the CAIP-2 id in its metadata, and
+the integrator collects against it.
+
+`contracts/script/Deploy.s.sol` deploys implementation + proxy with an atomic initialise. Testnet
+first; the canonical `RecurringCollector` addresses for both networks are in its header.
+
+**Not deployed anywhere yet.** The contract is a reference implementation with no live instance.
+
 ## Build
 
 ```sh
