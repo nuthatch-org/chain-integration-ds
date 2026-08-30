@@ -391,4 +391,80 @@ contract ChainIntegrationDataServiceTest is Test {
         );
         svc.acceptAgreement(_rca(address(svc), integrator), hex"00");
     }
+    // ── Upgrades must not change the immutables ──────────────────────────────
+    //
+    // `RECURRING_COLLECTOR` is immutable, so it lives in the implementation's bytecode rather than
+    // in proxy storage, and an upgrade is a new implementation with its own constructor arguments.
+    // Nothing about the ordinary upgrade path preserves it. A sibling service in this stack shipped
+    // precisely that mistake: a deploy script passing a stray implementation as HorizonStaking and
+    // the legacy TAPCollector as its collector, both constructor arguments, with nothing objecting.
+
+    /// A replacement built against the same collector is what an upgrade is supposed to be.
+    function test_anUpgradeKeepingTheCollectorIsAllowed() public {
+        MockController controller = new MockController(address(staking), address(token));
+        ChainIntegrationDataService next =
+            new ChainIntegrationDataService(address(controller), address(collector));
+
+        vm.prank(owner);
+        svc.upgradeToAndCall(address(next), "");
+
+        assertEq(address(svc.RECURRING_COLLECTOR()), address(collector));
+    }
+
+    /// The one that matters: an implementation wired to a different collector is refused.
+    function test_anUpgradeThatWouldRewireTheCollectorIsRefused() public {
+        MockController controller = new MockController(address(staking), address(token));
+        MockRecurringCollector other = new MockRecurringCollector(token);
+        ChainIntegrationDataService rogue =
+            new ChainIntegrationDataService(address(controller), address(other));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ChainIntegrationDataService.UpgradeChangesImmutable.selector,
+                address(collector),
+                address(other)
+            )
+        );
+        svc.upgradeToAndCall(address(rogue), "");
+
+        // And the proxy is untouched, which is the point: a refused upgrade must not half-apply.
+        assertEq(address(svc.RECURRING_COLLECTOR()), address(collector));
+    }
+
+    /// An address with no code answers every call successfully and returns nothing, so it has to be
+    /// rejected before the call rather than after it.
+    function test_upgradingToAnAddressWithNoCodeIsRefused() public {
+        address eoa = makeAddr("not a contract");
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(ChainIntegrationDataService.UpgradeTargetHasNoCode.selector, eoa)
+        );
+        svc.upgradeToAndCall(eoa, "");
+    }
+
+    /// A contract that is not one of these at all, which is a different mistake from a rewired one
+    /// and reads differently.
+    function test_upgradingToAnUnrelatedContractIsRefused() public {
+        address stranger = address(new MockGraphToken());
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ChainIntegrationDataService.UpgradeTargetIncompatible.selector, stranger
+            )
+        );
+        svc.upgradeToAndCall(stranger, "");
+    }
+
+    /// The guard is additional to `onlyOwner`, not a replacement for it.
+    function test_aStrangerStillCannotUpgradeEvenWithAValidImplementation() public {
+        MockController controller = new MockController(address(staking), address(token));
+        ChainIntegrationDataService next =
+            new ChainIntegrationDataService(address(controller), address(collector));
+
+        vm.prank(integrator);
+        vm.expectRevert();
+        svc.upgradeToAndCall(address(next), "");
+    }
+
 }

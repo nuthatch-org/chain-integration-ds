@@ -104,3 +104,24 @@ That newer ref also replaces the `onlyAuthorizedForProvision` modifier with a
 gotchas worth carrying back to `horizon-skills`.
 
 Apache-2.0.
+
+## Upgrades cannot change the immutables
+
+`RECURRING_COLLECTOR` is `immutable`, so it lives in the implementation's bytecode rather than in
+proxy storage, and an upgrade is a new implementation deployed with its own constructor arguments.
+Nothing about the ordinary UUPS path preserves it. Point the proxy at an implementation built
+against a different collector and this contract silently starts settling somewhere else: no event,
+no revert, and the storage anybody would inspect is unchanged.
+
+`_authorizeUpgrade` refuses it. The property that makes immutables dangerous is what makes them
+checkable, because being in bytecode means the candidate can be asked directly before it is adopted.
+Five tests cover it: the same collector is allowed, a different one reverts `UpgradeChangesImmutable`
+and leaves the proxy untouched, an address with no code and an unrelated contract each get their own
+error, and a stranger still cannot upgrade even with a valid implementation.
+
+**This was found by checking, not by reasoning.** On 2026-08-30 every UUPS data service in this
+stack, six of them, carried the same empty `_authorizeUpgrade`, and one of them had already shipped
+the failure: a deploy script passing a stray implementation as `HorizonStaking` and the *legacy*
+TAPCollector as its collector, both constructor arguments, with nothing objecting. SDSCE's own audit
+raises it as L-01 and rates it Low.
+

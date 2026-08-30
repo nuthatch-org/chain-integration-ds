@@ -75,6 +75,13 @@ contract ChainIntegrationDataService is
     /// @notice The recurring collector this service settles through.
     IRecurringCollector public immutable RECURRING_COLLECTOR;
 
+    /// @notice An upgrade candidate was built against a different collector.
+    error UpgradeChangesImmutable(address expected, address found);
+    /// @notice An upgrade candidate does not answer `RECURRING_COLLECTOR()`.
+    error UpgradeTargetIncompatible(address implementation);
+    /// @notice An upgrade candidate is an address with no code.
+    error UpgradeTargetHasNoCode(address implementation);
+
     /// @notice Governance-adjustable dispute window, floored by MIN_THAWING_PERIOD.
     uint64 public minThawingPeriod;
 
@@ -100,7 +107,41 @@ contract ChainIntegrationDataService is
         _setPauseGuardian(pauseGuardian, true);
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    /**
+     * @dev Refuse an upgrade that would change this contract's immutables.
+     *
+     * `RECURRING_COLLECTOR` and the inherited controller are `immutable`, which means they live in
+     * the *implementation's* bytecode rather than in proxy storage. An upgrade is a new
+     * implementation, deployed with its own constructor arguments, so nothing about the ordinary
+     * upgrade path preserves them. Point the proxy at an implementation built against a different
+     * collector and this contract silently starts settling somewhere else: no event, no revert,
+     * and the storage a reader would inspect is unchanged.
+     *
+     * This is not hypothetical. A sibling service in this stack shipped a deploy script passing a
+     * stray implementation as `HorizonStaking` and the *legacy* TAPCollector as its collector, both
+     * as constructor arguments, and nothing anywhere objected.
+     *
+     * The property that makes immutables dangerous is what makes them checkable: because they are
+     * in bytecode rather than storage, the candidate can be asked directly, before it is adopted.
+     *
+     * The code-length check comes first deliberately. A call to an address with no code succeeds
+     * and returns nothing, and decoding that failure is not caught by `try`, so an EOA would revert
+     * with a bare panic rather than something a caller can read.
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        if (newImplementation.code.length == 0) {
+            revert UpgradeTargetHasNoCode(newImplementation);
+        }
+        try ChainIntegrationDataService(newImplementation).RECURRING_COLLECTOR() returns (
+            IRecurringCollector found
+        ) {
+            if (address(found) != address(RECURRING_COLLECTOR)) {
+                revert UpgradeChangesImmutable(address(RECURRING_COLLECTOR), address(found));
+            }
+        } catch {
+            revert UpgradeTargetIncompatible(newImplementation);
+        }
+    }
 
     // ── Governance ───────────────────────────────────────────────────────────
 
