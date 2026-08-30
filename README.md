@@ -10,6 +10,27 @@ published as a reference implementation.
 **We are not going to run it.** The Night's Watch builds these services; operating them is a
 different business. Any integrator can register.
 
+## A defect the unit tests could not see
+
+`RecurringCollector.accept()` is callable **only by the data service an agreement names**. This
+contract had no function that called it, so an RCA written for it could be accepted by nobody: not
+the payer who signed it, not the integrator who benefits, not a third party. `collect()` could
+therefore never succeed, and sixteen passing tests said nothing about it, because they ran against a
+`MockRecurringCollector` whose `collect()` returned a number and modelled no rule at all.
+
+Established against the **deployed** collector on Arbitrum Sepolia rather than argued
+(`test/ForkCollect.t.sol`): the payer is refused, every third party is refused, and the named data
+service succeeds. The capability existed the whole time; this contract simply could not reach it.
+
+`acceptAgreement()` closes it, and is deliberately permissionless: the payer's signature is the
+authorisation and the collector checks it, so requiring a particular caller would add a second party
+who must act before a payer's own intention takes effect, and would buy nothing. The mock now
+enforces the one rule that matters, so the omission could not recur silently.
+
+What is still not proven: the fix has not been driven end to end on a fork, because that needs a
+real Controller, a staked provision and a registration - a deployment rehearsal rather than a test
+of this behaviour. Worth doing before mainnet, and said here rather than left to be assumed.
+
 ## The one design decision that matters
 
 It settles through **`RecurringCollector`**, not `GraphTallyCollector`.

@@ -173,6 +173,36 @@ contract ChainIntegrationDataService is
         emit PaymentsDestinationSet(msg.sender, dest);
     }
 
+    /// @notice Accept a payer-signed Recurring Collection Agreement naming this data service.
+    ///
+    /// Without this the contract could not be paid at all, and the omission was invisible from the
+    /// unit tests: `RecurringCollector.accept()` is callable **only by the data service the
+    /// agreement names**, so an RCA written for this contract could be accepted by nobody. The
+    /// payer could not accept their own, the integrator could not, and no third party could. Proven
+    /// against the deployed collector in `test/ForkCollect.t.sol` rather than argued.
+    ///
+    /// `startService` takes an `agreementId` as though acceptance had happened somewhere else.
+    /// This is that somewhere else.
+    ///
+    /// **Deliberately permissionless.** The payer's signature *is* the authorisation, and it is
+    /// checked by the collector, which recovers it and compares to `rca.payer`. Requiring a
+    /// particular caller on top would add a second party who must act before a payer's own
+    /// intention takes effect, and would buy nothing: the only agreement anyone can push through
+    /// here is one the payer signed, naming a provider this contract has registered.
+    function acceptAgreement(IRecurringCollector.RecurringCollectionAgreement calldata rca, bytes calldata signature)
+        external
+        whenNotPaused
+        returns (bytes16 agreementId)
+    {
+        // Checked here rather than left to the collector so the refusal names the mistake. The
+        // collector's own error would blame the caller for something the agreement's author did.
+        if (rca.dataService != address(this)) revert AgreementNotForThisService(rca.dataService, address(this));
+        if (!registeredProviders[rca.serviceProvider]) revert IntegratorNotRegistered(rca.serviceProvider);
+
+        agreementId = RECURRING_COLLECTOR.accept(rca, signature);
+        emit AgreementAccepted(rca.serviceProvider, rca.payer, agreementId);
+    }
+
     /// @notice Commit to supporting a chain under an existing recurring agreement.
     /// @param data ABI-encoded (string caip2, bytes16 agreementId).
     function startService(address serviceProvider, bytes calldata data) external override whenNotPaused {

@@ -8,6 +8,7 @@ import {ChainIntegrationDataService} from "../src/ChainIntegrationDataService.so
 import {IChainIntegrationDataService} from "../src/interfaces/IChainIntegrationDataService.sol";
 import {IHorizonStakingTypes} from "@graphprotocol/interfaces/contracts/horizon/internal/IHorizonStakingTypes.sol";
 import {IGraphPayments} from "@graphprotocol/horizon/interfaces/IGraphPayments.sol";
+import {IRecurringCollector} from "@graphprotocol/interfaces/contracts/horizon/IRecurringCollector.sol";
 
 contract MockGraphToken {
     mapping(address => uint256) public balanceOf;
@@ -42,6 +43,22 @@ contract MockRecurringCollector {
     function setPayout(uint256 f, address to) external {
         feeToReturn = f;
         payTo = to;
+    }
+
+    bytes16 public lastAccepted;
+    address public lastAcceptedBy;
+
+    /// Mirrors the real collector's one rule that matters here: only the data service the agreement
+    /// names may accept it. The old mock modelled no rule at all, which is how a contract with no
+    /// accept path passed sixteen tests.
+    function accept(IRecurringCollector.RecurringCollectionAgreement calldata rca, bytes calldata)
+        external
+        returns (bytes16)
+    {
+        require(msg.sender == rca.dataService, "not the named data service");
+        lastAccepted = bytes16(keccak256(abi.encode(rca.payer, rca.serviceProvider, rca.nonce)));
+        lastAcceptedBy = msg.sender;
+        return lastAccepted;
     }
 
     function collect(IGraphPayments.PaymentTypes, bytes memory data) external returns (uint256) {
@@ -313,5 +330,56 @@ contract ChainIntegrationDataServiceTest is Test {
     function test_slashingIsRefusedNotSilentlyAccepted() public {
         vm.expectRevert("slashing not supported");
         svc.slash(integrator, "");
+    }
+
+    // ── acceptAgreement ────────────────────────────────────────────────────────
+    //
+    // The path the contract shipped without. `RecurringCollector.accept()` is callable only by the
+    // data service an agreement names, so without a function here an RCA written for this contract
+    // could be accepted by nobody: not the payer who signed it, not the integrator, not a third
+    // party. Proven against the deployed collector in `ForkCollect.t.sol`.
+
+    function _rca(address ds, address provider)
+        internal
+        view
+        returns (IRecurringCollector.RecurringCollectionAgreement memory rca)
+    {
+        rca.deadline = uint64(block.timestamp + 1 days);
+        rca.endsAt = uint64(block.timestamp + 365 days);
+        rca.payer = address(0xBEEF);
+        rca.dataService = ds;
+        rca.serviceProvider = provider;
+        rca.maxInitialTokens = 1000 ether;
+        rca.maxOngoingTokensPerSecond = 1;
+        rca.minSecondsPerCollection = 60;
+        rca.maxSecondsPerCollection = 60 days;
+        rca.nonce = 1;
+    }
+
+    function test_acceptAgreementReachesTheCollectorAsTheNamedDataService() public {
+        _register();
+        bytes16 id = svc.acceptAgreement(_rca(address(svc), integrator), hex"00");
+        assertTrue(id != bytes16(0), "no agreement id returned");
+        assertEq(collector.lastAcceptedBy(), address(svc), "the data service must be the caller");
+        assertEq(collector.lastAccepted(), id);
+    }
+
+    /// Checked here rather than left to the collector, so the refusal names the mistake: the
+    /// collector's own error blames the caller for something the agreement's author did.
+    function test_acceptAgreementRefusesAnAgreementNamingAnotherService() public {
+        _register();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IChainIntegrationDataService.AgreementNotForThisService.selector, address(0xDEAD), address(svc)
+            )
+        );
+        svc.acceptAgreement(_rca(address(0xDEAD), integrator), hex"00");
+    }
+
+    function test_acceptAgreementRefusesAnUnregisteredIntegrator() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(IChainIntegrationDataService.IntegratorNotRegistered.selector, integrator)
+        );
+        svc.acceptAgreement(_rca(address(svc), integrator), hex"00");
     }
 }

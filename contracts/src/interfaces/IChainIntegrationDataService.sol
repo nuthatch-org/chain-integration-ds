@@ -35,6 +35,9 @@ interface IChainIntegrationDataService {
     event IntegratorRegistered(address indexed integrator, string metadataURI);
     event IntegratorDeregistered(address indexed integrator);
     event IntegrationStarted(address indexed integrator, string caip2, bytes16 indexed agreementId);
+
+    /// @notice A payer-signed agreement was accepted with the RecurringCollector.
+    event AgreementAccepted(address indexed integrator, address indexed payer, bytes16 indexed agreementId);
     event IntegrationStopped(address indexed integrator, string caip2, bytes16 indexed agreementId);
     event PaymentsDestinationSet(address indexed integrator, address destination);
 
@@ -54,6 +57,9 @@ interface IChainIntegrationDataService {
 
     error ChainNotSupported(string caip2);
     error IntegratorNotRegistered(address integrator);
+
+    /// @notice An agreement naming a different data service was offered to this one.
+    error AgreementNotForThisService(address named, address expected);
     error ActiveIntegrationsExist(address integrator);
     error IntegrationNotFound(address integrator, string caip2);
     error InvalidPaymentType();
