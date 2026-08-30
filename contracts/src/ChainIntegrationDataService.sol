@@ -269,10 +269,28 @@ contract ChainIntegrationDataService is
             abi.decode(data, (bytes16, uint256, string));
 
         uint256 balanceBefore = _graphToken().balanceOf(address(this));
+        // `CollectParams`, in full. This encoded four fields against a six-field struct until
+        // 2026-08-30, so every real collection reverted with `RecurringCollectorInvalidCollectData`
+        // - and the unit tests were green because the mock stored the bytes without decoding them.
+        // A mock that accepts any encoding proves nothing about the encoding.
+        //
+        // `collectionId` is unused for a recurring agreement, which is identified by `agreementId`.
+        //
+        // `maxSlippage` is the requested amount, which reads as permissive and is the right
+        // reading here: `tokensToCollect` is an "up to" from a retainer that accrues per second, so
+        // a collection arriving early is *supposed* to yield less than asked. A tight bound would
+        // revert on the normal case.
         fees = RECURRING_COLLECTOR.collect(
             paymentType,
             abi.encode(
-                agreementId, tokensToCollect, burnCutPpm + dataServiceCutPpm, paymentsDestination[serviceProvider]
+                IRecurringCollector.CollectParams({
+                    agreementId: agreementId,
+                    collectionId: bytes32(0),
+                    tokens: tokensToCollect,
+                    dataServiceCut: burnCutPpm + dataServiceCutPpm,
+                    receiverDestination: paymentsDestination[serviceProvider],
+                    maxSlippage: tokensToCollect
+                })
             )
         );
 

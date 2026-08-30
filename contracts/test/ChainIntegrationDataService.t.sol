@@ -61,8 +61,17 @@ contract MockRecurringCollector {
         return lastAccepted;
     }
 
+    /// Decodes what the real collector decodes.
+    ///
+    /// It used to store the bytes and mint, which meant any encoding at all passed - and the
+    /// contract's was wrong, four fields against a six-field struct, so every real collection
+    /// reverted while sixteen tests stayed green. A mock that accepts any input is not a test of
+    /// the input.
     function collect(IGraphPayments.PaymentTypes, bytes memory data) external returns (uint256) {
         lastData = data;
+        IRecurringCollector.CollectParams memory p = abi.decode(data, (IRecurringCollector.CollectParams));
+        require(p.agreementId != bytes16(0), "mock: no agreement id");
+        require(p.receiverDestination != address(0), "mock: no receiver");
         TOKEN.mint(payTo, feeToReturn);
         return feeToReturn;
     }

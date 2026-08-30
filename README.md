@@ -27,9 +27,22 @@ authorisation and the collector checks it, so requiring a particular caller woul
 who must act before a payer's own intention takes effect, and would buy nothing. The mock now
 enforces the one rule that matters, so the omission could not recur silently.
 
-What is still not proven: the fix has not been driven end to end on a fork, because that needs a
-real Controller, a staked provision and a registration - a deployment rehearsal rather than a test
-of this behaviour. Worth doing before mainnet, and said here rather than left to be assumed.
+**The rehearsal was then done, and found a second defect.** `test/ForkPaid.t.sol` deploys against the
+real Controller and RecurringCollector on Arbitrum Sepolia, stakes and provisions, registers,
+accepts a payer-signed agreement, funds escrow and collects - asserting the integrator's balance goes
+up. The first run failed with `RecurringCollectorInvalidCollectData`: `collect()` encoded **four
+fields against a six-field `CollectParams`**, missing `collectionId` and `maxSlippage`. Every real
+collection would have reverted.
+
+The unit tests were green because `MockRecurringCollector.collect()` stored the calldata **without
+decoding it**. Any encoding at all passed. A mock that accepts any input is not a test of the input,
+and it is now made to decode exactly what the real collector decodes, so the shape cannot drift
+again.
+
+Two defects, then, both fatal to payment, both invisible to sixteen passing tests: no accept path,
+and a malformed collect payload. The lesson is not about this contract. It is that `forge test`
+against a mock establishes the arithmetic and nothing about the counterparty, which is why a fork
+rehearsal is now a required step in `horizon-skills`.
 
 ## The one design decision that matters
 
