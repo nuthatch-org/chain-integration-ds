@@ -63,7 +63,7 @@ contract ForkCollectTest is Test {
 
     /// A payer must authorise their own key before any RCA they sign will verify: `_isAuthorized`
     /// requires `authorizations[signer].authorizer == payer` and does not special-case signer ==
-    /// payer. Established in `nightswatchhq/weaver`, and repeated here because without it every
+    /// payer. Established in `nuthatch-org/weaver`, and repeated here because without it every
     /// test below fails for the wrong reason.
     function _authorizeSelf() internal {
         uint256 proofDeadline = block.timestamp + 1 hours;
