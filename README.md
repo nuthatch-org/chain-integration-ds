@@ -7,7 +7,7 @@ captured outside the protocol". A chain that wants to be supported pays an integ
 it touches the protocol: no cut, no share to indexers, no rail for either. This is that rail,
 published as a reference implementation.
 
-**We are not going to run it.** The Night's Watch builds these services; operating them is a
+**We are not going to run it.** Nuthatch builds these services; operating them is a
 different business. Any integrator can register.
 
 ## A defect the unit tests could not see
