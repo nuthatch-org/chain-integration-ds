@@ -1,0 +1,54 @@
+# yatr - https://github.com/cargopete/yatr
+
+[settings]
+cache = true
+
+# lib/ is gitignored and not submodules, so the pins in foundry.lock are installed by hand.
+# forge install refuses a non-empty destination, hence the guard.
+[tasks.deps]
+desc = "Install the pinned Solidity dependencies into contracts/lib"
+cwd = "contracts"
+shell = true
+run = ["test -d lib/contracts || forge install --no-git --shallow foundry-rs/forge-std@v1.16.2 OpenZeppelin/openzeppelin-contracts-upgradeable@v5.7.0 graphprotocol/contracts@2629e6463f6474f076396a32f51c9799490ea503"]
+no_cache = true
+
+[tasks.fmt]
+desc = "Format the Solidity sources"
+cwd = "contracts"
+run = ["forge fmt"]
+no_cache = true
+
+[tasks.fmt-check]
+desc = "Fail if the Solidity sources are unformatted"
+cwd = "contracts"
+run = ["forge fmt --check"]
+sources = ["src/**", "test/**", "script/**", "foundry.toml"]
+
+[tasks.build]
+desc = "Compile the contracts"
+depends = ["deps"]
+cwd = "contracts"
+run = ["forge build"]
+sources = ["src/**", "test/**", "script/**", "foundry.toml", "foundry.lock", "remappings.txt"]
+
+# After build: two forge processes sharing out/ and cache/ race.
+[tasks.test]
+desc = "Unit tests; the fork tests skip themselves without ARBITRUM_SEPOLIA_RPC_URL"
+depends = ["build"]
+cwd = "contracts"
+run = ["forge test"]
+sources = ["src/**", "test/**", "script/**", "foundry.toml", "foundry.lock", "remappings.txt"]
+
+# Not cached: it reads live Arbitrum Sepolia state.
+[tasks.fork-test]
+desc = "The fork rehearsal against Arbitrum Sepolia (needs ARBITRUM_SEPOLIA_RPC_URL)"
+depends = ["build"]
+cwd = "contracts"
+run = ["forge test --match-path test/*Fork*"]
+no_cache = true
+
+# fmt-check is left out until main is forge-fmt clean.
+[tasks.ci]
+desc = "Build and unit tests"
+depends = ["build", "test"]
+run = []
